@@ -14,6 +14,14 @@
     <!-- 保存/恢复控制按钮 -->
     <div class="control-panel" v-if="!loading && !error">
       <button 
+        class="control-btn update-btn" 
+        @click="updateMPRPosition"
+        :disabled="!canSave"
+        title="更新MPR到固定位置"
+      >
+        🔄 Update My Project
+      </button>
+      <button 
         class="control-btn save-btn" 
         @click="saveCurrentPosition"
         :disabled="!canSave"
@@ -264,6 +272,19 @@ onMounted(async () => {
     // 添加 Crosshairs 工具
     addTool(CrosshairsTool)
     toolGroup.addTool(CrosshairsTool.toolName)
+    
+    // 配置 Crosshairs 工具以确保横截面正确显示
+    toolGroup.setToolConfiguration(CrosshairsTool.toolName, {
+      // 启用参考线显示
+      getReferenceLineColor: () => [255, 255, 0], // 黄色参考线
+      getReferenceLineControllable: () => true,
+      getReferenceLineDraggableRotatable: () => true,
+      // 确保在所有viewport之间同步
+      autoPan: {
+        enabled: false,
+      },
+    })
+    
     toolGroup.setToolActive(CrosshairsTool.toolName, {
       bindings: [{ mouseButton: ToolsEnums.MouseBindings.Primary }],
     })
@@ -736,6 +757,202 @@ function saveCurrentPosition() {
   }
 }
 
+// 更新MPR到固定位置
+function updateMPRPosition() {
+  if (!renderingEngineRef || !viewportIdsRef) {
+    console.error('渲染引擎未初始化')
+    return
+  }
+
+  try {
+    // 从measurement.json中获取的点数据
+    const points = [
+      [31.50214385986328, -140.07765197753906, 859.3524780273438],
+      [34.58005028416463, -141.6882029085106, 862.7489221061926],
+      [36.77678577345103, -145.1404212737562, 865.4343205806341],
+      [38.366546372851644, -149.20827428314414, 867.5557586555454],
+      [39.26782760679941, -153.7362960800528, 869.0106359482569],
+      [39.20237766015661, -158.56664231634903, 869.4903750293994],
+      [37.59967700679518, -163.00194336521466, 868.3201652943335],
+      [34.94380470594756, -166.3533901795924, 865.9276285186534],
+      [31.767717502508365, -168.36767019269055, 862.8399388423335],
+      [28.45614694304884, -169.21134772247547, 859.4781115063338],
+      [25.14387881924835, -168.12118008491524, 855.8959789984457],
+      [22.270828347227596, -165.91052583559835, 852.6453456080102],
+      [20.01450129732287, -162.56020942448947, 849.9093146053336],
+      [18.86841368358383, -158.21362607475058, 848.2194210195215],
+      [18.989928792934382, -153.37034421552553, 847.7966966023463],
+      [19.91445219632709, -148.7308044605562, 848.2355767150335],
+      [21.984458101638452, -144.59890671975083, 849.9279877365689],
+      [24.84366132888451, -141.80627991623572, 852.5964689029747],
+      [28.116225529894905, -140.1623257331496, 855.8267680664645],
+      [31.50214385986328, -140.07765197753906, 859.3524780273438]
+    ]
+
+    // 计算这些点的中心点（平均值）
+    const calculateCenterPoint = (points) => {
+      if (!points || points.length === 0) {
+        return [0, 0, 0]
+      }
+      
+      const sum = points.reduce(
+        (acc, point) => [
+          acc[0] + point[0],
+          acc[1] + point[1],
+          acc[2] + point[2]
+        ],
+        [0, 0, 0]
+      )
+      
+      return [
+        sum[0] / points.length,
+        sum[1] / points.length,
+        sum[2] / points.length
+      ]
+    }
+
+    // 计算中心点作为焦点
+    const fixedFocalPoint = calculateCenterPoint(points)
+    const normalVector = [0.720, -0.078, -0.690]
+    
+    console.log('计算的中心点（焦点）:', fixedFocalPoint)
+
+    // 归一化法向量
+    const normalize = (v) => {
+      const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+      if (length < 0.0001) return v
+      return [v[0] / length, v[1] / length, v[2] / length]
+    }
+
+    const normalizedNormal = normalize(normalVector)
+
+    // 计算viewUp向量（选择一个与法向量垂直的向量）
+    // 使用一个参考向量（通常是[0, 0, 1]或[0, 1, 0]）来计算viewUp
+    const referenceUp = [0, 0, 1]
+    
+    // 计算viewUp = referenceUp - (referenceUp · normal) * normal
+    const dotProduct = referenceUp[0] * normalizedNormal[0] + 
+                       referenceUp[1] * normalizedNormal[1] + 
+                       referenceUp[2] * normalizedNormal[2]
+    
+    let viewUp = [
+      referenceUp[0] - dotProduct * normalizedNormal[0],
+      referenceUp[1] - dotProduct * normalizedNormal[1],
+      referenceUp[2] - dotProduct * normalizedNormal[2]
+    ]
+    
+    // 归一化viewUp
+    viewUp = normalize(viewUp)
+    
+    // 如果viewUp太小（几乎平行于法向量），使用另一个参考向量
+    const viewUpLength = Math.sqrt(viewUp[0] * viewUp[0] + viewUp[1] * viewUp[1] + viewUp[2] * viewUp[2])
+    if (viewUpLength < 0.1) {
+      const referenceUp2 = [0, 1, 0]
+      const dotProduct2 = referenceUp2[0] * normalizedNormal[0] + 
+                          referenceUp2[1] * normalizedNormal[1] + 
+                          referenceUp2[2] * normalizedNormal[2]
+      viewUp = [
+        referenceUp2[0] - dotProduct2 * normalizedNormal[0],
+        referenceUp2[1] - dotProduct2 * normalizedNormal[1],
+        referenceUp2[2] - dotProduct2 * normalizedNormal[2]
+      ]
+      viewUp = normalize(viewUp)
+    }
+
+    // 计算相机位置（在法向量方向上，距离焦点一定距离）
+    // 相机位置 = 焦点 - 法向量 * 距离
+    // 使用一个合理的距离（例如体积的边界框大小）
+    const distance = 500 // 可以根据实际情况调整
+    const cameraPosition = [
+      fixedFocalPoint[0] - normalizedNormal[0] * distance,
+      fixedFocalPoint[1] - normalizedNormal[1] * distance,
+      fixedFocalPoint[2] - normalizedNormal[2] * distance
+    ]
+
+    const viewports = {
+      axial: renderingEngineRef.getViewport(viewportIdsRef.axial),
+      sagittal: renderingEngineRef.getViewport(viewportIdsRef.sagittal),
+      coronal: renderingEngineRef.getViewport(viewportIdsRef.coronal),
+    }
+
+    // 更新所有viewport的相机状态
+    // 注意：为了保持Crosshairs工具正常工作，我们只更新焦点位置，保持标准视图方向
+    Object.keys(viewports).forEach((viewName) => {
+      const viewport = viewports[viewName]
+      
+      try {
+        const camera = viewport.getCamera()
+        
+        // 只更新焦点位置，保持原有的viewUp和position方向
+        // 这样可以确保Crosshairs工具继续正常工作
+        camera.focalPoint = [...fixedFocalPoint]
+        
+        // 可选：如果需要根据法向量调整视图，可以更新position和viewUp
+        // 但这可能会影响Crosshairs的显示
+        // camera.position = [...cameraPosition]
+        // camera.viewUp = [...viewUp]
+        
+        // 保持其他参数不变（如parallelScale）
+        
+        // 应用相机设置
+        viewport.setCamera(camera)
+        
+        console.log(`[${viewName.toUpperCase()} Viewport] MPR焦点已更新:`, {
+          焦点: fixedFocalPoint,
+          原始相机位置: camera.position,
+          原始viewUp: camera.viewUp
+        })
+      } catch (err) {
+        console.warn(`更新${viewName} viewport位置失败:`, err)
+      }
+    })
+
+    // 重新渲染所有viewport
+    renderingEngineRef.renderViewports([
+      viewportIdsRef.axial,
+      viewportIdsRef.sagittal,
+      viewportIdsRef.coronal,
+    ])
+
+    // 确保Crosshairs工具同步更新
+    // Crosshairs工具通过监听viewport的相机变化来更新，但我们需要确保它被触发
+    try {
+      const toolGroup = ToolGroupManager.getToolGroup(toolGroupId)
+      if (toolGroup) {
+        // 强制刷新Crosshairs工具
+        // 通过重新设置工具配置来触发更新
+        toolGroup.setToolConfiguration(CrosshairsTool.toolName, {
+          focalPoint: fixedFocalPoint,
+        })
+        
+        // 触发所有viewport的相机更新事件，让Crosshairs工具知道位置已改变
+        Object.keys(viewports).forEach((viewName) => {
+          const viewport = viewports[viewName]
+          // 通过重新设置相机来触发更新事件
+          const camera = viewport.getCamera()
+          viewport.setCamera(camera)
+        })
+        
+        // 再次渲染以确保Crosshairs显示
+        renderingEngineRef.renderViewports([
+          viewportIdsRef.axial,
+          viewportIdsRef.sagittal,
+          viewportIdsRef.coronal,
+        ])
+        
+        console.log('Crosshairs工具已同步更新到新位置')
+      }
+    } catch (err) {
+      console.warn('同步Crosshairs工具失败:', err)
+    }
+
+    console.log('MPR位置已更新到固定位置')
+  } catch (err) {
+    console.error('更新MPR位置失败:', err)
+    alert('更新MPR位置失败: ' + err.message)
+  }
+}
+
 // 恢复到保存的位置
 function restoreSavedPosition() {
   if (!renderingEngineRef || !viewportIdsRef || !savedPosition.value) {
@@ -1107,6 +1324,16 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #e081eb 0%, #e4465b 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+}
+
+.update-btn {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.update-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3e9cee 0%, #00e2ee 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
 }
 
 .control-btn:disabled {
