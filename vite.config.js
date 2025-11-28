@@ -29,7 +29,7 @@ export default defineConfig({
       },
       // ⭐ 添加 Orthanc 原生 API 代理
       '/tools': {
-        target: 'http://192.168.1.3:18997',
+        target: 'http://192.168.4.17:18997',
         changeOrigin: true,
         secure: false,
         ws: false,
@@ -41,7 +41,7 @@ export default defineConfig({
         },
       },
       '/instances': {
-        target: 'http://192.168.1.3:18997',
+        target: 'http://192.168.4.17:18997',
         changeOrigin: true,
         secure: false,
         ws: false,
@@ -53,7 +53,7 @@ export default defineConfig({
         },
       },
       '/series': {
-        target: 'http://192.168.1.3:18997',
+        target: 'http://192.168.4.17:18997',
         changeOrigin: true,
         secure: false,
         ws: false,
@@ -66,7 +66,7 @@ export default defineConfig({
       },
       // ⭐ 添加 WADO-URI 代理（根据Orthanc DICOMweb文档）
       '/wado': {
-        target: 'http://192.168.1.3:18997',
+        target: 'http://192.168.4.17:18997',
         changeOrigin: true,
         secure: false,
         ws: false,

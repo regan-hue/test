@@ -29,6 +29,13 @@
       >
         🔄 恢复位置
       </button>
+      <button 
+        class="control-btn preset-btn" 
+        @click="applyPresetPosition"
+        title="定位到特定视角"
+      >
+        📍 定位视角
+      </button>
       <div v-if="hasSavedPosition" class="save-info">
         已保存位置
       </div>
@@ -801,6 +808,83 @@ function restoreSavedPosition() {
   }
 }
 
+// 应用预设位置
+function applyPresetPosition() {
+  if (!renderingEngineRef || !viewportIdsRef) {
+    console.error('渲染引擎未初始化')
+    return
+  }
+
+  try {
+    const viewports = {
+      axial: renderingEngineRef.getViewport(viewportIdsRef.axial),
+      sagittal: renderingEngineRef.getViewport(viewportIdsRef.sagittal),
+      coronal: renderingEngineRef.getViewport(viewportIdsRef.coronal),
+    }
+
+    // 定义预设参数
+    const presetData = {
+      // 第一组数据：推测为轴状 (Axial)
+      axial: {
+        position: [72, -78, -69],
+        focalPoint: [29.206, -153.945, 858.528],
+        viewUp: [0.00, -1.00, 0.00],
+        parallelScale: 109.79,
+        viewAngle: 90.00
+      },
+      // 第二组数据：矢状 (Sagittal)
+      sagittal: {
+        position: [151.94, -177.80, 986.97],
+        focalPoint: [23.36, -177.80, 864.76],
+        viewUp: [-0.69, 0.00, 0.72],
+        parallelScale: 85.80,
+        viewAngle: 90.00
+      },
+      // 第三组数据：冠状 (Coronal)
+      coronal: {
+        position: [22.20, -330.06, 864.00],
+        focalPoint: [22.20, -152.67, 864.00],
+        viewUp: [0.00, 0.00, 1.00],
+        parallelScale: 85.80,
+        viewAngle: 90.00
+      }
+    }
+
+    console.log('应用预设位置:', presetData)
+
+    // 应用到每个视口
+    Object.keys(viewports).forEach((viewName) => {
+      const viewport = viewports[viewName]
+      const data = presetData[viewName]
+
+      if (data && viewport) {
+        viewport.setCamera({
+          position: data.position,
+          focalPoint: data.focalPoint,
+          viewUp: data.viewUp,
+          parallelScale: data.parallelScale,
+          viewAngle: data.viewAngle
+        })
+      }
+    })
+
+    // 重新渲染
+    renderingEngineRef.renderViewports([
+      viewportIdsRef.axial,
+      viewportIdsRef.sagittal,
+      viewportIdsRef.coronal,
+    ])
+
+    // 如果 Crosshairs 工具处于激活状态，可能需要更新它的引用点，
+    // 但通常通过 setCamera 改变视图后，工具会自动更新或需要手动触发。
+    // 这里我们只是移动相机。
+
+  } catch (err) {
+    console.error('应用预设位置失败:', err)
+    alert('应用预设位置失败: ' + err.message)
+  }
+}
+
 // 启动相机数据探针
 function startCameraProbe(renderingEngine, viewportIds) {
   // 立即更新一次
@@ -1107,6 +1191,16 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #e081eb 0%, #e4465b 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+}
+
+.preset-btn {
+  background: linear-gradient(135deg, #4ade80 0%, #3b82f6 100%);
+}
+
+.preset-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #22c55e 0%, #2563eb 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
 }
 
 .control-btn:disabled {
