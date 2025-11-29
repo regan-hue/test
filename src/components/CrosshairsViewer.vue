@@ -1120,7 +1120,16 @@ async function applyPresetPosition() {
     const axialPreferredUp = getPreferredUp('axial')
     const sagittalPreferredUp = getPreferredUp('sagittal')
     const coronalPreferredUp = getPreferredUp('coronal')
-    
+    console.log("获取相机的参数")
+    console.log("相机的viewPlaneNormal参数")
+    console.log(axialPreferredNormal)
+    console.log(sagittalPreferredNormal)
+    console.log(coronalPreferredNormal)
+    console.log("相机的viewUp参数")
+    console.log(axialPreferredUp)
+    console.log(sagittalPreferredUp)
+    console.log(coronalPreferredUp)
+
     // 5. 计算三个正交视图的法向量（方案 B）
     
     // 5.1 新 axial 法向量 n_axial
@@ -1241,38 +1250,7 @@ async function applyPresetPosition() {
     const coronalViewPlaneNormal = calculateViewPlaneNormal(coronalPosition, origin)
     
     // 验证：viewPlane.normal 应该等于 -n（相机的观察方向）
-    console.log('\n╔══════════════════════════════════════════════════════════════════╗')
-    console.log('║              📍 MPR 定位到点集合平面 - 计算结果                  ║')
-    console.log('╚══════════════════════════════════════════════════════════════════╝')
-    console.log(`\n📊 点集合信息:`)
-    console.log(`   点的数量: ${less_points.length}`)
-    console.log(`   平面中心点 (origin): [${origin.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`   计算出的平面法向量 (n_plane): [${n_plane.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`\n📐 三个正交视图的法向量:`)
-    console.log(`   n_axial:    [${n_axial.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`   n_sagittal: [${n_sagittal.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`   n_coronal:  [${n_coronal.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`\n📷 相机参数:`)
-    console.log(`   相机距离: ${cameraDistance.toFixed(2)}mm`)
-    console.log(`   点的边界框: X[${minX.toFixed(2)}, ${maxX.toFixed(2)}], Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}], Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}]`)
-    console.log(`   范围: X=${rangeX.toFixed(2)}mm, Y=${rangeY.toFixed(2)}mm, Z=${rangeZ.toFixed(2)}mm`)
-    console.log(`   parallelScale: ${parallelScale.toFixed(2)}mm`)
-    console.log(`\n   Axial:`)
-    console.log(`     position: [${axialPosition.map(v => v.toFixed(2)).join(', ')}]`)
-    console.log(`     focalPoint: [${origin.map(v => v.toFixed(2)).join(', ')}]`)
-    console.log(`     viewUp: [${axialViewUp.map(v => v.toFixed(4)).join(', ')}]`)
-    console.log(`     viewPlane.normal: [${axialViewPlaneNormal.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`     验证: n_axial = [${n_axial.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`     点积验证: ${dotProductVec(axialViewPlaneNormal, n_axial).toFixed(6)} (应接近 -1.0)`)
-    console.log(`\n   Sagittal:`)
-    console.log(`     position: [${sagittalPosition.map(v => v.toFixed(2)).join(', ')}]`)
-    console.log(`     focalPoint: [${origin.map(v => v.toFixed(2)).join(', ')}]`)
-    console.log(`     viewPlane.normal: [${sagittalViewPlaneNormal.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log(`\n   Coronal:`)
-    console.log(`     position: [${coronalPosition.map(v => v.toFixed(2)).join(', ')}]`)
-    console.log(`     focalPoint: [${origin.map(v => v.toFixed(2)).join(', ')}]`)
-    console.log(`     viewPlane.normal: [${coronalViewPlaneNormal.map(v => v.toFixed(6)).join(', ')}]`)
-    console.log('\n')
+    
 
     const presetData = {
       axial: {
@@ -1280,7 +1258,7 @@ async function applyPresetPosition() {
         focalPoint: [...origin],
         viewUp: [...axialViewUp],
         viewPlaneNormal: [...n_axial],  // 根据文档：viewPlaneNormal = n_axial
-        parallelScale: parallelScale,
+        // parallelScale: parallelScale,
         viewAngle: 90.00,
         viewPlane: {
           normal: [...axialViewPlaneNormal],  // 等于相机的观察方向
@@ -1292,7 +1270,7 @@ async function applyPresetPosition() {
         focalPoint: [...origin],
         viewUp: [...sagittalViewUp],
         viewPlaneNormal: [...n_sagittal],  // 根据文档：viewPlaneNormal = n_sagittal
-        parallelScale: parallelScale,
+        // parallelScale: parallelScale,
         viewAngle: 90.00,
         viewPlane: {
           normal: [...sagittalViewPlaneNormal],  // 等于相机的观察方向
@@ -1304,7 +1282,7 @@ async function applyPresetPosition() {
         focalPoint: [...origin],
         viewUp: [...coronalViewUp],
         viewPlaneNormal: [...n_coronal],  // 根据文档：viewPlaneNormal = n_coronal
-        parallelScale: parallelScale,
+        // parallelScale: parallelScale,
         viewAngle: 90.00,
         viewPlane: {
           normal: [...coronalViewPlaneNormal],  // 等于相机的观察方向
@@ -1312,7 +1290,8 @@ async function applyPresetPosition() {
         }
       }
     }
-
+    console.log('重要信息！！！！！！')
+    console.log(presetData)
     // 应用到每个视口
     Object.keys(viewports).forEach((viewName) => {
       const viewport = viewports[viewName]
@@ -1360,63 +1339,33 @@ async function applyPresetPosition() {
 // 更新 Crosshairs 工具的中心位置（三个视图十字交叉线的交汇点）
 async function updateCrosshairsPosition(worldPoint) {
   try {
-    const { annotation, utilities } = await import('@cornerstonejs/tools')
-    
     // 获取工具组
     const toolGroup = ToolGroupManager.getToolGroup(toolGroupId)
     if (!toolGroup) {
-      console.warn('未找到工具组')
+      console.warn('⚠️ 未找到工具组 toolGroupId:', toolGroupId)
       return
     }
 
-    const viewportIds = [viewportIdsRef.axial, viewportIdsRef.sagittal, viewportIdsRef.coronal]
-
-    // 查找并更新所有 Crosshairs annotations 的 toolCenter
-    const allAnnotations = annotation.state.getAllAnnotations()
-    let foundCrosshairs = false
-    
-    for (const ann of allAnnotations) {
-      if (ann.metadata && ann.metadata.toolName === CrosshairsTool.toolName) {
-        foundCrosshairs = true
-        
-        if (ann.data && ann.data.handles) {
-          // 更新 toolCenter 到目标点
-          ann.data.handles.toolCenter = [...worldPoint]
-          ann.invalidated = true
-        }
-      }
+    // 获取 Crosshairs 工具实例
+    const crosshairsTool = toolGroup.getToolInstance(CrosshairsTool.toolName)
+    if (!crosshairsTool) {
+      console.warn('⚠️ 未找到 Crosshairs 工具实例')
+      return
     }
 
-    if (!foundCrosshairs) {
-      console.warn('未找到 Crosshairs annotation')
-    }
+    // 直接设置工具的中心点
+    crosshairsTool.toolCenter = [...worldPoint]
+    console.log(`✅ Crosshairs 工具中心点已设置为: [${worldPoint.map(v => v.toFixed(6)).join(', ')}]`)
 
-    // 触发 ANNOTATION_MODIFIED 事件
-    try {
-      const { eventTarget, EVENTS } = await import('@cornerstonejs/tools')
-      if (eventTarget && EVENTS && EVENTS.ANNOTATION_MODIFIED) {
-        const event = new CustomEvent(EVENTS.ANNOTATION_MODIFIED, {
-          detail: {
-            viewportId: viewportIdsRef.axial,
-            renderingEngineId: renderingEngineId,
-          }
-        })
-        eventTarget.dispatchEvent(event)
-      }
-    } catch (eventErr) {
-      console.log('触发事件时出错:', eventErr.message)
+    // 触发重新渲染所有viewport
+    if (renderingEngineRef && viewportIdsRef) {
+      const viewportIds = [viewportIdsRef.axial, viewportIdsRef.sagittal, viewportIdsRef.coronal]
+      renderingEngineRef.renderViewports(viewportIds)
+      console.log('✅ 已触发视图重新渲染')
     }
-
-    // 触发 annotation 渲染更新
-    if (utilities && utilities.triggerAnnotationRenderForViewportIds) {
-      utilities.triggerAnnotationRenderForViewportIds(viewportIds)
-    }
-
-    // 强制重新渲染
-    renderingEngineRef.renderViewports(viewportIds)
 
   } catch (err) {
-    console.error('更新 Crosshairs 位置失败:', err)
+    console.error('更新 Crosshairs 位置失败:', err && err.message ? err.message : err)
   }
 }
 
