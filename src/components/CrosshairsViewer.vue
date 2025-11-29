@@ -688,8 +688,41 @@ function setupCoordinateLogging(renderingEngine, viewportIds) {
   })
 }
 
+// 向量工具函数
+function vectorLength(v) {
+  return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+}
+
+function normalizeVec(v) {
+  const len = vectorLength(v)
+  if (len === 0) return [0, 0, 0]
+  return [v[0] / len, v[1] / len, v[2] / len]
+}
+
+function subtractVec(a, b) {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+function dotProductVec(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+function crossProductVec(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ]
+}
+
+// 格式化向量为字符串（保留6位小数）
+function formatVec(v, decimals = 6) {
+  if (!v || !Array.isArray(v)) return 'N/A'
+  return `[${v.map(x => x.toFixed(decimals)).join(', ')}]`
+}
+
 // 保存当前MPR位置
-function saveCurrentPosition() {
+async function saveCurrentPosition() {
   if (!renderingEngineRef || !viewportIdsRef) {
     console.error('渲染引擎未初始化')
     return
@@ -703,6 +736,12 @@ function saveCurrentPosition() {
     }
 
     const savedState = {}
+
+    console.log('\n')
+    console.log('╔══════════════════════════════════════════════════════════════════╗')
+    console.log('║                    📸 保存位置 - 详细参数输出                      ║')
+    console.log('╚══════════════════════════════════════════════════════════════════╝')
+    console.log('\n')
 
     // 保存每个viewport的相机状态
     Object.keys(viewports).forEach((viewName) => {
@@ -719,24 +758,187 @@ function saveCurrentPosition() {
           parallelScale: camera.parallelScale !== undefined ? camera.parallelScale : null,
           viewAngle: camera.viewAngle !== undefined ? camera.viewAngle : null,
           parallelProjection: camera.parallelProjection !== undefined ? camera.parallelProjection : null,
+          clippingRange: camera.clippingRange ? [...camera.clippingRange] : null,
         }
         
-        // 输出保存的状态信息
-        console.log(`[${viewName.toUpperCase()} Viewport] 保存的状态:`, savedState[viewName])
-        console.log(`[${viewName.toUpperCase()} Viewport] 位置 (position):`, savedState[viewName].position)
-        console.log(`[${viewName.toUpperCase()} Viewport] 焦点 (focalPoint):`, savedState[viewName].focalPoint)
-        console.log(`[${viewName.toUpperCase()} Viewport] 视图向上 (viewUp):`, savedState[viewName].viewUp)
-        console.log(`[${viewName.toUpperCase()} Viewport] 平行缩放 (parallelScale):`, savedState[viewName].parallelScale)
+        // 计算派生参数
+        const position = savedState[viewName].position
+        const focalPoint = savedState[viewName].focalPoint
+        const viewUp = savedState[viewName].viewUp
+        
+        // 视图方向 = normalize(focalPoint - position)
+        let viewDirection = null
+        let viewDirectionNormalized = null
+        let cameraDistance = null
+        
+        if (position && focalPoint) {
+          viewDirection = subtractVec(focalPoint, position)
+          cameraDistance = vectorLength(viewDirection)
+          viewDirectionNormalized = normalizeVec(viewDirection)
+        }
+        
+        // 计算视图平面的法向量（与视图方向相同）
+        const planeNormal = viewDirectionNormalized
+        
+        // 计算右向量 (right = viewDirection × viewUp)
+        let rightVector = null
+        if (viewDirectionNormalized && viewUp) {
+          rightVector = normalizeVec(crossProductVec(viewDirectionNormalized, viewUp))
+        }
+        
+        // 输出格式化的信息
+        console.log(`┌──────────────────────────────────────────────────────────────────┐`)
+        console.log(`│  📷 ${viewName.toUpperCase()} VIEWPORT 相机参数`)
+        console.log(`├──────────────────────────────────────────────────────────────────┤`)
+        console.log(`│  🔹 基础相机参数:`)
+        console.log(`│     position (相机位置):     ${formatVec(position)}`)
+        console.log(`│     focalPoint (焦点):       ${formatVec(focalPoint)}`)
+        console.log(`│     viewUp (向上向量):       ${formatVec(viewUp)}`)
+        console.log(`│     parallelScale (缩放):    ${savedState[viewName].parallelScale?.toFixed(4) || 'N/A'}`)
+        console.log(`│     viewAngle (视角):        ${savedState[viewName].viewAngle?.toFixed(4) || 'N/A'}°`)
+        console.log(`│     parallelProjection:      ${savedState[viewName].parallelProjection}`)
+        console.log(`│     clippingRange:           ${formatVec(savedState[viewName].clippingRange, 2)}`)
+        console.log(`│`)
+        console.log(`│  🔹 派生参数:`)
+        console.log(`│     viewDirection (视图方向): ${formatVec(viewDirectionNormalized)}`)
+        console.log(`│     cameraDistance (距离):    ${cameraDistance?.toFixed(4) || 'N/A'} mm`)
+        console.log(`│     planeNormal (平面法向量): ${formatVec(planeNormal)}`)
+        console.log(`│     rightVector (右向量):     ${formatVec(rightVector)}`)
+        console.log(`└──────────────────────────────────────────────────────────────────┘`)
+        console.log('\n')
+        
       } catch (err) {
         console.warn(`保存${viewName} viewport状态失败:`, err)
         savedState[viewName] = null
       }
     })
 
+    // 输出十字线工具状态
+    console.log(`┌──────────────────────────────────────────────────────────────────┐`)
+    console.log(`│  ✚ 十字线 (Crosshairs) 工具状态`)
+    console.log(`├──────────────────────────────────────────────────────────────────┤`)
+    
+    try {
+      const toolGroup = ToolGroupManager.getToolGroup(toolGroupId)
+      if (toolGroup) {
+        const crosshairsTool = toolGroup.getToolInstance(CrosshairsTool.toolName)
+        
+        if (crosshairsTool) {
+          // 获取工具状态
+          const toolState = crosshairsTool.toolState || {}
+          console.log(`│  🔹 工具名称: ${CrosshairsTool.toolName}`)
+          console.log(`│  🔹 工具状态: ${toolGroup.getToolOptions(CrosshairsTool.toolName)?.mode || 'N/A'}`)
+          
+          // 尝试获取十字线的参考点
+          if (crosshairsTool.getReferencedImageId) {
+            console.log(`│  🔹 参考图像ID: ${crosshairsTool.getReferencedImageId() || 'N/A'}`)
+          }
+          
+          // 获取十字线配置
+          const toolOptions = toolGroup.getToolOptions(CrosshairsTool.toolName)
+          if (toolOptions) {
+            console.log(`│  🔹 工具配置:`, toolOptions)
+          }
+          
+          // 获取annotation state
+          try {
+            const { annotation } = await import('@cornerstonejs/tools')
+            const annotations = annotation.state.getAnnotations(CrosshairsTool.toolName, viewportIdsRef.axial)
+            
+            if (annotations && annotations.length > 0) {
+              console.log(`│  🔹 十字线标注数量: ${annotations.length}`)
+              annotations.forEach((ann, index) => {
+                console.log(`│     [${index}] annotationUID: ${ann.annotationUID}`)
+                if (ann.data) {
+                  console.log(`│         handles:`, ann.data.handles)
+                  if (ann.data.handles && ann.data.handles.toolCenter) {
+                    console.log(`│         toolCenter (十字线中心): ${formatVec(ann.data.handles.toolCenter)}`)
+                  }
+                }
+              })
+            } else {
+              console.log(`│  🔹 未找到十字线标注`)
+            }
+          } catch (annErr) {
+            console.log(`│  🔹 获取十字线标注失败:`, annErr.message)
+          }
+          
+        } else {
+          console.log(`│  ⚠️ 未找到Crosshairs工具实例`)
+        }
+      } else {
+        console.log(`│  ⚠️ 未找到工具组`)
+      }
+    } catch (toolErr) {
+      console.log(`│  ⚠️ 获取十字线工具状态失败:`, toolErr.message)
+    }
+    
+    console.log(`└──────────────────────────────────────────────────────────────────┘`)
+    console.log('\n')
+
+    // 输出三视图正交性验证
+    console.log(`┌──────────────────────────────────────────────────────────────────┐`)
+    console.log(`│  📐 三视图正交性验证`)
+    console.log(`├──────────────────────────────────────────────────────────────────┤`)
+    
+    try {
+      const axialDir = savedState.axial?.focalPoint && savedState.axial?.position
+        ? normalizeVec(subtractVec(savedState.axial.focalPoint, savedState.axial.position))
+        : null
+      const sagittalDir = savedState.sagittal?.focalPoint && savedState.sagittal?.position
+        ? normalizeVec(subtractVec(savedState.sagittal.focalPoint, savedState.sagittal.position))
+        : null
+      const coronalDir = savedState.coronal?.focalPoint && savedState.coronal?.position
+        ? normalizeVec(subtractVec(savedState.coronal.focalPoint, savedState.coronal.position))
+        : null
+      
+      if (axialDir && sagittalDir && coronalDir) {
+        const dotAS = dotProductVec(axialDir, sagittalDir)
+        const dotAC = dotProductVec(axialDir, coronalDir)
+        const dotSC = dotProductVec(sagittalDir, coronalDir)
+        
+        console.log(`│  🔹 Axial · Sagittal  = ${dotAS.toFixed(6)} (应接近0)`)
+        console.log(`│  🔹 Axial · Coronal   = ${dotAC.toFixed(6)} (应接近0)`)
+        console.log(`│  🔹 Sagittal · Coronal = ${dotSC.toFixed(6)} (应接近0)`)
+        
+        const threshold = 0.01
+        const isOrthogonal = Math.abs(dotAS) < threshold && Math.abs(dotAC) < threshold && Math.abs(dotSC) < threshold
+        console.log(`│  🔹 正交性: ${isOrthogonal ? '✅ 正交' : '❌ 不正交'}`)
+      } else {
+        console.log(`│  ⚠️ 无法验证正交性（缺少视图方向数据）`)
+      }
+    } catch (orthErr) {
+      console.log(`│  ⚠️ 正交性验证失败:`, orthErr.message)
+    }
+    
+    console.log(`└──────────────────────────────────────────────────────────────────┘`)
+    console.log('\n')
+
+    // 输出可复制的代码格式
+    console.log(`┌──────────────────────────────────────────────────────────────────┐`)
+    console.log(`│  📋 可复制的预设代码格式`)
+    console.log(`├──────────────────────────────────────────────────────────────────┤`)
+    console.log(`const presetData = {`)
+    Object.keys(savedState).forEach((viewName) => {
+      const state = savedState[viewName]
+      if (state) {
+        console.log(`  ${viewName}: {`)
+        console.log(`    position: [${state.position?.map(v => v.toFixed(3)).join(', ')}],`)
+        console.log(`    focalPoint: [${state.focalPoint?.map(v => v.toFixed(3)).join(', ')}],`)
+        console.log(`    viewUp: [${state.viewUp?.map(v => v.toFixed(3)).join(', ')}],`)
+        console.log(`    parallelScale: ${state.parallelScale?.toFixed(3)},`)
+        console.log(`    viewAngle: ${state.viewAngle?.toFixed(3)}`)
+        console.log(`  },`)
+      }
+    })
+    console.log(`}`)
+    console.log(`└──────────────────────────────────────────────────────────────────┘`)
+    console.log('\n')
+
     savedPosition.value = savedState
     hasSavedPosition.value = true
     
-    console.log('位置已保存:', savedState)
+    console.log('✅ 位置已保存完成!')
   } catch (err) {
     console.error('保存位置失败:', err)
     alert('保存位置失败: ' + err.message)
@@ -809,7 +1011,7 @@ function restoreSavedPosition() {
 }
 
 // 应用预设位置
-function applyPresetPosition() {
+async function applyPresetPosition() {
   if (!renderingEngineRef || !viewportIdsRef) {
     console.error('渲染引擎未初始化')
     return
@@ -822,35 +1024,294 @@ function applyPresetPosition() {
       coronal: renderingEngineRef.getViewport(viewportIdsRef.coronal),
     }
 
-    // 定义预设参数
-    const presetData = {
-      // 第一组数据：推测为轴状 (Axial)
+    // ========== 根据点集合计算平面并重建三正交 MPR ==========
+    // 参考文档：mpr-plane-orientation-notes.md 方案 B
+    
+    // 1. 点集合定义
+    const less_points = [
+      [31.50214385986328, -140.07765197753906, 859.3524780273438],
+      [34.58005028416463, -141.6882029085106, 862.7489221061926],
+      [36.77678577345103, -145.1404212737562, 865.4343205806341],
+      [38.366546372851644, -149.20827428314414, 867.5557586555454],
+      [39.26782760679941, -153.7362960800528, 869.0106359482569],
+      [39.20237766015661, -158.56664231634903, 869.4903750293994],
+      [37.59967700679518, -163.00194336521466, 868.3201652943335],
+      [34.94380470594756, -166.3533901795924, 865.9276285186534],
+      [31.767717502508365, -168.36767019269055, 862.8399388423335],
+      [28.45614694304884, -169.21134772247547, 859.4781115063338],
+      [25.14387881924835, -168.12118008491524, 855.8959789984457],
+      [22.270828347227596, -165.91052583559835, 852.6453456080102],
+      [20.01450129732287, -162.56020942448947, 849.9093146053336],
+      [18.86841368358383, -158.21362607475058, 848.2194210195215],
+      [18.989928792934382, -153.37034421552553, 847.7966966023463],
+      [19.91445219632709, -148.7308044605562, 848.2355767150335],
+      [21.984458101638452, -144.59890671975083, 849.9279877365689],
+      [24.84366132888451, -141.80627991623572, 852.5964689029747],
+      [28.116225529894905, -140.1623257331496, 855.8267680664645],
+      [31.50214385986328, -140.07765197753906, 859.3524780273438]
+    ]
+    
+    // 2. 计算点的中心（作为平面上的点 origin）
+    let centerSum = [0, 0, 0]
+    less_points.forEach(point => {
+      centerSum[0] += point[0]
+      centerSum[1] += point[1]
+      centerSum[2] += point[2]
+    })
+    const origin = [
+      centerSum[0] / less_points.length,
+      centerSum[1] / less_points.length,
+      centerSum[2] / less_points.length
+    ]
+    
+    // 3. 使用三点法计算平面法向量
+    const p1 = less_points[0]
+    const p2 = less_points[Math.floor(less_points.length / 3)]
+    const p3 = less_points[Math.floor(less_points.length * 2 / 3)]
+    
+    const v1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]]
+    const v2 = [p3[0] - p1[0], p3[1] - p1[1], p3[2] - p1[2]]
+    const normal_raw = crossProductVec(v1, v2)
+    const n_plane = normalizeVec(normal_raw)  // 给定的平面法向量（归一化）
+    
+    // 4. 获取当前三个视图的 preferred normal 和 preferred up（用于保持临床习惯）
+    // 标准 MPR 相机值（来自 Cornerstone 内部规范）
+    const MPR_CAMERA_VALUES = {
       axial: {
-        position: [72, -78, -69],
-        focalPoint: [29.206, -153.945, 858.528],
-        viewUp: [0.00, -1.00, 0.00],
-        parallelScale: 109.79,
-        viewAngle: 90.00
+        viewPlaneNormal: [0, 0, -1],
+        viewUp: [0, -1, 0],
       },
-      // 第二组数据：矢状 (Sagittal)
       sagittal: {
-        position: [151.94, -177.80, 986.97],
-        focalPoint: [23.36, -177.80, 864.76],
-        viewUp: [-0.69, 0.00, 0.72],
-        parallelScale: 85.80,
-        viewAngle: 90.00
+        viewPlaneNormal: [1, 0, 0],
+        viewUp: [0, 0, 1],
       },
-      // 第三组数据：冠状 (Coronal)
       coronal: {
-        position: [22.20, -330.06, 864.00],
-        focalPoint: [22.20, -152.67, 864.00],
-        viewUp: [0.00, 0.00, 1.00],
-        parallelScale: 85.80,
-        viewAngle: 90.00
+        viewPlaneNormal: [0, -1, 0],
+        viewUp: [0, 0, 1],
+      },
+    }
+    
+    // 尝试从当前相机获取 preferred 值，否则使用默认值
+    const getPreferredNormal = (viewName) => {
+      try {
+        const viewport = viewports[viewName]
+        const camera = viewport.getCamera()
+        if (camera.viewPlaneNormal) {
+          return normalizeVec(camera.viewPlaneNormal)
+        }
+      } catch (e) {}
+      return normalizeVec(MPR_CAMERA_VALUES[viewName].viewPlaneNormal)
+    }
+    
+    const getPreferredUp = (viewName) => {
+      try {
+        const viewport = viewports[viewName]
+        const camera = viewport.getCamera()
+        if (camera.viewUp) {
+          return normalizeVec(camera.viewUp)
+        }
+      } catch (e) {}
+      return normalizeVec(MPR_CAMERA_VALUES[viewName].viewUp)
+    }
+    
+    const axialPreferredNormal = getPreferredNormal('axial')
+    const sagittalPreferredNormal = getPreferredNormal('sagittal')
+    const coronalPreferredNormal = getPreferredNormal('coronal')
+    const axialPreferredUp = getPreferredUp('axial')
+    const sagittalPreferredUp = getPreferredUp('sagittal')
+    const coronalPreferredUp = getPreferredUp('coronal')
+    
+    // 5. 计算三个正交视图的法向量（方案 B）
+    
+    // 5.1 新 axial 法向量 n_axial
+    let n_axial = [...n_plane]
+    // 若与原 axial normal 方向相反，则取反以保持大致视角一致
+    if (dotProductVec(n_axial, axialPreferredNormal) < 0) {
+      n_axial = [-n_axial[0], -n_axial[1], -n_axial[2]]
+    }
+    
+    // 5.2 新 sagittal 法向量 n_sagittal
+    // 将原 sagittal normal 投影到 n_axial 的正交平面
+    const sagProjLen = dotProductVec(sagittalPreferredNormal, n_axial)
+    const sagProjOnAxial = [n_axial[0] * sagProjLen, n_axial[1] * sagProjLen, n_axial[2] * sagProjLen]
+    let n_sagittal_raw = subtractVec(sagittalPreferredNormal, sagProjOnAxial)
+    const sagLen = vectorLength(n_sagittal_raw)
+    
+    // 如果退化（n_sagittal_raw 太小），使用任意正交向量
+    if (sagLen < 0.01) {
+      let refVec = [1, 0, 0]
+      if (Math.abs(dotProductVec(n_axial, refVec)) > 0.9) {
+        refVec = [0, 1, 0]
+      }
+      n_sagittal_raw = crossProductVec(n_axial, refVec)
+    }
+    let n_sagittal = normalizeVec(n_sagittal_raw)
+    // 若与原 sagittal normal 方向相反，则取反
+    if (dotProductVec(n_sagittal, sagittalPreferredNormal) < 0) {
+      n_sagittal = [-n_sagittal[0], -n_sagittal[1], -n_sagittal[2]]
+    }
+    
+    // 5.3 新 coronal 法向量 n_coronal
+    let n_coronal_raw = crossProductVec(n_axial, n_sagittal)
+    let n_coronal = normalizeVec(n_coronal_raw)
+    // 若与原 coronal normal 方向相反，则取反
+    if (dotProductVec(n_coronal, coronalPreferredNormal) < 0) {
+      n_coronal = [-n_coronal[0], -n_coronal[1], -n_coronal[2]]
+    }
+    
+    // 6. 计算临床友好的 viewUp 向量
+    // 函数：computeViewUpVector(normal, preferredUp)
+    const computeViewUpVector = (normal, preferredUp) => {
+      const n = normalizeVec(normal)
+      const pu = normalizeVec(preferredUp)
+      const projLen = dotProductVec(pu, n)
+      const proj = [n[0] * projLen, n[1] * projLen, n[2] * projLen]
+      let tangent = subtractVec(pu, proj)
+      const tangentLen = vectorLength(tangent)
+      
+      // 如果退化（preferredUp 接近 normal），使用 fallback
+      if (tangentLen < 0.01) {
+        let refVec = [0, 0, 1]
+        if (Math.abs(dotProductVec(n, refVec)) > 0.9) {
+          refVec = [0, 1, 0]
+        }
+        tangent = crossProductVec(n, refVec)
+      }
+      
+      return normalizeVec(tangent)
+    }
+    
+    const axialViewUp = computeViewUpVector(n_axial, axialPreferredUp)
+    const sagittalViewUp = computeViewUpVector(n_sagittal, sagittalPreferredUp)
+    const coronalViewUp = computeViewUpVector(n_coronal, coronalPreferredUp)
+    
+    // 7. 计算相机距离和位置
+    // 使用当前 axial 相机距离作为基准
+    let cameraDistance = 500
+    try {
+      const axialCamera = viewports.axial.getCamera()
+      const currentDist = vectorLength(subtractVec(axialCamera.position, axialCamera.focalPoint))
+      if (currentDist > 0 && currentDist < 10000) {
+        cameraDistance = currentDist
+      }
+    } catch (e) {}
+    
+    const axialPosition = [
+      origin[0] + n_axial[0] * cameraDistance,
+      origin[1] + n_axial[1] * cameraDistance,
+      origin[2] + n_axial[2] * cameraDistance
+    ]
+    const sagittalPosition = [
+      origin[0] + n_sagittal[0] * cameraDistance,
+      origin[1] + n_sagittal[1] * cameraDistance,
+      origin[2] + n_sagittal[2] * cameraDistance
+    ]
+    const coronalPosition = [
+      origin[0] + n_coronal[0] * cameraDistance,
+      origin[1] + n_coronal[1] * cameraDistance,
+      origin[2] + n_coronal[2] * cameraDistance
+    ]
+    
+    // 计算点的边界框，用于设置合适的 parallelScale
+    let minX = Infinity, maxX = -Infinity
+    let minY = Infinity, maxY = -Infinity
+    let minZ = Infinity, maxZ = -Infinity
+    less_points.forEach(point => {
+      minX = Math.min(minX, point[0])
+      maxX = Math.max(maxX, point[0])
+      minY = Math.min(minY, point[1])
+      maxY = Math.max(maxY, point[1])
+      minZ = Math.min(minZ, point[2])
+      maxZ = Math.max(maxZ, point[2])
+    })
+    const rangeX = maxX - minX
+    const rangeY = maxY - minY
+    const rangeZ = maxZ - minZ
+    const maxRange = Math.max(rangeX, rangeY, rangeZ)
+    const parallelScale = maxRange * 1.5  // 添加50%边距确保所有点都可见
+    
+    // 8. 计算 viewPlane.normal（必须等于相机的实际观察方向）
+    // 关键：viewPlane.normal = normalize(focalPoint - position)
+    const calculateViewPlaneNormal = (position, focalPoint) => {
+      return normalizeVec(subtractVec(focalPoint, position))
+    }
+    
+    const axialViewPlaneNormal = calculateViewPlaneNormal(axialPosition, origin)
+    const sagittalViewPlaneNormal = calculateViewPlaneNormal(sagittalPosition, origin)
+    const coronalViewPlaneNormal = calculateViewPlaneNormal(coronalPosition, origin)
+    
+    // 验证：viewPlane.normal 应该等于 -n（相机的观察方向）
+    console.log('\n╔══════════════════════════════════════════════════════════════════╗')
+    console.log('║              📍 MPR 定位到点集合平面 - 计算结果                  ║')
+    console.log('╚══════════════════════════════════════════════════════════════════╝')
+    console.log(`\n📊 点集合信息:`)
+    console.log(`   点的数量: ${less_points.length}`)
+    console.log(`   平面中心点 (origin): [${origin.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`   计算出的平面法向量 (n_plane): [${n_plane.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`\n📐 三个正交视图的法向量:`)
+    console.log(`   n_axial:    [${n_axial.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`   n_sagittal: [${n_sagittal.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`   n_coronal:  [${n_coronal.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`\n📷 相机参数:`)
+    console.log(`   相机距离: ${cameraDistance.toFixed(2)}mm`)
+    console.log(`   点的边界框: X[${minX.toFixed(2)}, ${maxX.toFixed(2)}], Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}], Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}]`)
+    console.log(`   范围: X=${rangeX.toFixed(2)}mm, Y=${rangeY.toFixed(2)}mm, Z=${rangeZ.toFixed(2)}mm`)
+    console.log(`   parallelScale: ${parallelScale.toFixed(2)}mm`)
+    console.log(`\n   Axial:`)
+    console.log(`     position: [${axialPosition.map(v => v.toFixed(2)).join(', ')}]`)
+    console.log(`     focalPoint: [${origin.map(v => v.toFixed(2)).join(', ')}]`)
+    console.log(`     viewUp: [${axialViewUp.map(v => v.toFixed(4)).join(', ')}]`)
+    console.log(`     viewPlane.normal: [${axialViewPlaneNormal.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`     验证: n_axial = [${n_axial.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`     点积验证: ${dotProductVec(axialViewPlaneNormal, n_axial).toFixed(6)} (应接近 -1.0)`)
+    console.log(`\n   Sagittal:`)
+    console.log(`     position: [${sagittalPosition.map(v => v.toFixed(2)).join(', ')}]`)
+    console.log(`     focalPoint: [${origin.map(v => v.toFixed(2)).join(', ')}]`)
+    console.log(`     viewPlane.normal: [${sagittalViewPlaneNormal.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log(`\n   Coronal:`)
+    console.log(`     position: [${coronalPosition.map(v => v.toFixed(2)).join(', ')}]`)
+    console.log(`     focalPoint: [${origin.map(v => v.toFixed(2)).join(', ')}]`)
+    console.log(`     viewPlane.normal: [${coronalViewPlaneNormal.map(v => v.toFixed(6)).join(', ')}]`)
+    console.log('\n')
+
+    const presetData = {
+      axial: {
+        position: axialPosition,
+        focalPoint: [...origin],
+        viewUp: [...axialViewUp],
+        viewPlaneNormal: [...n_axial],  // 根据文档：viewPlaneNormal = n_axial
+        parallelScale: parallelScale,
+        viewAngle: 90.00,
+        viewPlane: {
+          normal: [...axialViewPlaneNormal],  // 等于相机的观察方向
+          point: [...origin],
+        }
+      },
+      sagittal: {
+        position: sagittalPosition,
+        focalPoint: [...origin],
+        viewUp: [...sagittalViewUp],
+        viewPlaneNormal: [...n_sagittal],  // 根据文档：viewPlaneNormal = n_sagittal
+        parallelScale: parallelScale,
+        viewAngle: 90.00,
+        viewPlane: {
+          normal: [...sagittalViewPlaneNormal],  // 等于相机的观察方向
+          point: [...origin],
+        }
+      },
+      coronal: {
+        position: coronalPosition,
+        focalPoint: [...origin],
+        viewUp: [...coronalViewUp],
+        viewPlaneNormal: [...n_coronal],  // 根据文档：viewPlaneNormal = n_coronal
+        parallelScale: parallelScale,
+        viewAngle: 90.00,
+        viewPlane: {
+          normal: [...coronalViewPlaneNormal],  // 等于相机的观察方向
+          point: [...origin],
+        }
       }
     }
-
-    console.log('应用预设位置:', presetData)
 
     // 应用到每个视口
     Object.keys(viewports).forEach((viewName) => {
@@ -858,13 +1319,25 @@ function applyPresetPosition() {
       const data = presetData[viewName]
 
       if (data && viewport) {
-        viewport.setCamera({
+        const cameraParams = {
           position: data.position,
           focalPoint: data.focalPoint,
           viewUp: data.viewUp,
           parallelScale: data.parallelScale,
           viewAngle: data.viewAngle
-        })
+        }
+        
+        // 根据文档：设置 viewPlaneNormal
+        if (data.viewPlaneNormal) {
+          cameraParams.viewPlaneNormal = data.viewPlaneNormal
+        }
+        
+        // 如果存在 viewPlane，添加到相机参数中
+        if (data.viewPlane) {
+          cameraParams.viewPlane = data.viewPlane
+        }
+        
+        viewport.setCamera(cameraParams)
       }
     })
 
@@ -875,13 +1348,75 @@ function applyPresetPosition() {
       viewportIdsRef.coronal,
     ])
 
-    // 如果 Crosshairs 工具处于激活状态，可能需要更新它的引用点，
-    // 但通常通过 setCamera 改变视图后，工具会自动更新或需要手动触发。
-    // 这里我们只是移动相机。
+    // 更新 Crosshairs 工具的中心点位置到 origin（三个视图的交点）
+    await updateCrosshairsPosition(origin)
 
   } catch (err) {
     console.error('应用预设位置失败:', err)
     alert('应用预设位置失败: ' + err.message)
+  }
+}
+
+// 更新 Crosshairs 工具的中心位置（三个视图十字交叉线的交汇点）
+async function updateCrosshairsPosition(worldPoint) {
+  try {
+    const { annotation, utilities } = await import('@cornerstonejs/tools')
+    
+    // 获取工具组
+    const toolGroup = ToolGroupManager.getToolGroup(toolGroupId)
+    if (!toolGroup) {
+      console.warn('未找到工具组')
+      return
+    }
+
+    const viewportIds = [viewportIdsRef.axial, viewportIdsRef.sagittal, viewportIdsRef.coronal]
+
+    // 查找并更新所有 Crosshairs annotations 的 toolCenter
+    const allAnnotations = annotation.state.getAllAnnotations()
+    let foundCrosshairs = false
+    
+    for (const ann of allAnnotations) {
+      if (ann.metadata && ann.metadata.toolName === CrosshairsTool.toolName) {
+        foundCrosshairs = true
+        
+        if (ann.data && ann.data.handles) {
+          // 更新 toolCenter 到目标点
+          ann.data.handles.toolCenter = [...worldPoint]
+          ann.invalidated = true
+        }
+      }
+    }
+
+    if (!foundCrosshairs) {
+      console.warn('未找到 Crosshairs annotation')
+    }
+
+    // 触发 ANNOTATION_MODIFIED 事件
+    try {
+      const { eventTarget, EVENTS } = await import('@cornerstonejs/tools')
+      if (eventTarget && EVENTS && EVENTS.ANNOTATION_MODIFIED) {
+        const event = new CustomEvent(EVENTS.ANNOTATION_MODIFIED, {
+          detail: {
+            viewportId: viewportIdsRef.axial,
+            renderingEngineId: renderingEngineId,
+          }
+        })
+        eventTarget.dispatchEvent(event)
+      }
+    } catch (eventErr) {
+      console.log('触发事件时出错:', eventErr.message)
+    }
+
+    // 触发 annotation 渲染更新
+    if (utilities && utilities.triggerAnnotationRenderForViewportIds) {
+      utilities.triggerAnnotationRenderForViewportIds(viewportIds)
+    }
+
+    // 强制重新渲染
+    renderingEngineRef.renderViewports(viewportIds)
+
+  } catch (err) {
+    console.error('更新 Crosshairs 位置失败:', err)
   }
 }
 
